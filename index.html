@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PF Workout Tracker</title>
+  <meta name="theme-color" content="#0ea5e9">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <!-- Tailwind (no build) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    #toast { position: fixed; bottom: 16px; right: 16px; background: rgba(17,24,39,.95); color: #fff; padding: 10px 14px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,.25); display:none; z-index: 50;}
+    .card { @apply rounded-2xl border border-gray-200/70 bg-white p-4 shadow-sm; }
+    .btn { @apply inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium border; }
+    .btn-primary { @apply border-sky-600 bg-sky-600 text-white hover:bg-sky-700; }
+    .btn-ghost { @apply border-gray-200 bg-white hover:bg-gray-50; }
+    .badge { @apply inline-flex items-center rounded-full border px-2 py-0.5 text-xs text-gray-700 border-gray-200; }
+    .input { @apply w-24 rounded-lg border border-gray-200 px-2 py-1 text-sm; }
+    .label { @apply text-xs uppercase tracking-wide text-gray-500; }
+    .grid-cards { @apply grid gap-4 md:grid-cols-2 xl:grid-cols-3; }
+    .stickybar { @apply fixed bottom-0 left-0 right-0 border-t bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 z-40; }
+    .small { @apply text-xs text-gray-500; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <header class="sticky top-0 z-40 border-b bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+    <div class="mx-auto max-w-6xl px-4 py-3 flex flex-wrap items-center gap-2">
+      <h1 class="text-xl font-semibold">PF Workout Tracker</h1>
+      <div class="ml-auto flex flex-wrap items-center gap-2">
+        <input id="datePicker" type="date" class="rounded-lg border border-gray-200 px-2 py-1 text-sm" />
+        <button id="todayBtn" class="btn btn-ghost">Today</button>
+        <select id="routineSelect" class="rounded-lg border border-gray-200 px-2 py-1 text-sm">
+          <option value="">Select routine</option>
+          <option value="monday">Monday: Chest & Abs</option>
+          <option value="tuesday">Tuesday: Back & Cardio</option>
+          <option value="wednesday">Wednesday: Shoulders</option>
+          <option value="thursday">Thursday: Arms & Abs</option>
+          <option value="friday">Friday: Legs</option>
+        </select>
+        <button id="loadRoutineBtn" class="btn btn-ghost">Load routine</button>
+        <button id="copyAllBtn" class="btn btn-ghost">Copy last for all</button>
+        <button id="saveBtn" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 pb-24 pt-6">
+    <section aria-label="summary" class="mb-6 grid gap-3 sm:grid-cols-3">
+      <div class="card"><div class="label">Session Volume</div><div id="sumVolume" class="mt-1 text-2xl font-bold">0</div></div>
+      <div class="card"><div class="label">Total Sets</div><div id="sumSets" class="mt-1 text-2xl font-bold">0</div></div>
+      <div class="card"><div class="label">New PRs today</div><div id="sumPRs" class="mt-1 text-2xl font-bold">0</div></div>
+    </section>
+
+    <section class="mb-4 card">
+      <div class="font-semibold mb-1">Today’s Plan</div>
+      <div id="planMeta" class="small">No routine loaded yet. Pick one above or click Today to auto-select by weekday.</div>
+      <ul id="planList" class="list-disc pl-5 small"></ul>
+    </section>
+
+    <section aria-label="workout" class="grid-cards" id="exerciseGrid"></section>
+
+    <section aria-label="analytics" class="mt-8 grid gap-4 lg:grid-cols-2">
+      <div class="card">
+        <div class="mb-2 flex items-center justify-between">
+          <div class="font-semibold">Estimated 1RM Trend</div>
+          <div>
+            <label class="label">Exercise</label>
+            <select id="exerciseSelect" class="rounded-lg border border-gray-200 px-2 py-1 text-sm"></select>
+          </div>
+        </div>
+        <canvas id="chart1rm" height="220"></canvas>
+      </div>
+      <div class="card">
+        <div class="mb-2 flex items-center justify-between">
+          <div class="font-semibold">Weekly Volume</div>
+          <div class="label">Last 12 weeks</div>
+        </div>
+        <canvas id="chartVolume" height="220"></canvas>
+      </div>
+    </section>
+
+    <section class="mt-8 grid gap-4 md:grid-cols-2">
+      <div class="card">
+        <div class="font-semibold mb-2">Data</div>
+        <div class="flex flex-wrap gap-2">
+          <button id="exportCsvBtn" class="btn btn-ghost">Export CSV</button>
+          <button id="exportJsonBtn" class="btn btn-ghost">Backup JSON</button>
+          <label class="btn btn-ghost cursor-pointer">
+            Restore JSON
+            <input id="importJsonInput" type="file" accept="application/json" class="hidden">
+          </label>
+          <button id="clearDayBtn" class="btn btn-ghost">Clear Day</button>
+          <button id="clearAllBtn" class="btn btn-ghost">Clear All</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="font-semibold mb-2">Tips</div>
+        <ul class="list-disc pl-5 text-sm space-y-1">
+          <li>Press Ctrl or Cmd + S to save.</li>
+          <li>Load the day’s routine to prefill exercises and target reps.</li>
+          <li>Install this as an app from your browser menu.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div class="stickybar">
+    <div class="mx-auto max-w-6xl px-4 py-2 flex items-center gap-2">
+      <button id="installBtn" class="btn btn-ghost">Install</button>
+      <div class="ml-auto text-xs text-gray-500">Autosaves on Save button or Ctrl/Cmd + S</div>
+    </div>
+  </div>
+
+<script>
+// ---------- Planet Fitness 5-Day Routine ----------
+// Each exercise includes target sets/reps as an array, eg [12,10,8] for a pyramid.
+// Source: Dr Workout "5 Day Workout Routine for Planet Fitness Members"
+// (You can edit names or orders below to match your gym.)
+const ROUTINES = {
+  monday: {
+    title: "Chest & Abs",
+    items: [
+      { id: "incline_db_bench", name: "Incline Dumbbell Bench Press", targets: [12,10,8] },
+      { id: "db_bench", name: "Dumbbell Bench Press", targets: [12,10,8] },
+      { id: "incline_smith_bench", name: "Incline Smith Machine Bench Press", targets: [12,10,8] },
+      { id: "smith_bench", name: "Smith Machine Bench Press", targets: [10,10,10] }, // 3 x 8–10
+      { id: "high_cable_fly", name: "High Cable Chest Fly", targets: [15,15,15] },
+      { id: "low_cable_fly", name: "Low Cable Chest Fly", targets: [15,15,15] },
+      { id: "crunches", name: "Crunches", targets: [15,15,15] }
+    ]
+  },
+  tuesday: {
+    title: "Back & Cardio",
+    items: [
+      { id: "pullups", name: "Pull Ups / Assisted", targets: [10,10,10] },
+      { id: "lat_pulldown_wide", name: "Wide Grip Lat Pulldown", targets: [12,10,8] },
+      { id: "cable_row", name: "Cable Row", targets: [12,10,8] },
+      { id: "machine_row", name: "Chest Supported Machine Row", targets: [12,12,12] },
+      { id: "db_row_single", name: "Single Arm Dumbbell Row", targets: [12,10,8] },
+      { id: "straight_arm_pulldown", name: "Straight Arm Pulldown", targets: [12,12,12] },
+      { id: "cardio", name: "Slow-Paced Cardio (min)", targets: [10] } // track minutes in "weight" field
+    ]
+  },
+  wednesday: {
+    title: "Shoulders",
+    items: [
+      { id: "hammer_shoulder_press", name: "Hammer Shoulder Press Machine", targets: [12,10,8] },
+      { id: "arnold_press", name: "Seated Dumbbell Arnold Press", targets: [12,10,8] },
+      { id: "db_lateral_raise", name: "Dumbbell Lateral Raises", targets: [15,15,15] },
+      { id: "front_raise", name: "Front Raises", targets: [15,15,15] },
+      { id: "reverse_pec_deck", name: "Reverse Pec Deck Fly", targets: [15,15,15] },
+      { id: "cable_face_pull", name: "Cable Face Pull", targets: [12,12,12] },
+      { id: "db_shrugs", name: "Dumbbell Shrugs", targets: [12,12,12] }
+    ]
+  },
+  thursday: {
+    title: "Arms & Abs",
+    items: [
+      { id: "db_bicep_curl", name: "Dumbbell Bicep Curl", targets: [12,10,8] },
+      { id: "preacher_curl_machine", name: "Preacher Bicep Curl Machine", targets: [12,10,8] },
+      { id: "incline_db_curl", name: "Seated Incline Dumbbell Bicep Curl", targets: [12,12,12] },
+      { id: "cable_pushdown", name: "Cable Tricep Pushdown", targets: [12,10,8] },
+      { id: "cable_oh_tricep_ext", name: "Cable Overhead Tricep Extension", targets: [12,10,8] },
+      { id: "single_arm_cross_tricep", name: "Single Arm Cross Body Cable Tricep Ext", targets: [12,12,12] },
+      { id: "lying_leg_raise", name: "Lying Leg Raises", targets: [15,15,15] }
+    ]
+  },
+  friday: {
+    title: "Legs",
+    items: [
+      { id: "smith_squat", name: "Smith Machine Squats", targets: [12,10,8] },
+      { id: "sumo_goblet_squat", name: "Sumo Goblet Squat", targets: [12,10,8] },
+      { id: "leg_press", name: "Leg Press Machine", targets: [12,10,8] },
+      { id: "ham_curl_machine", name: "Hamstring Curl Machine", targets: [12,10,8] },
+      { id: "leg_extension", name: "Leg Extension Machine", targets: [12,10,8] },
+      { id: "glute_kickback", name: "Glute Kickback Machine", targets: [12,12,12] },
+      { id: "calf_extension", name: "Calf Extension Machine", targets: [15,15,15] }
+    ]
+  }
+};
+
+const STORAGE_KEY = "pfwt_v31";
+
+// ---------- State ----------
+let appState = {
+  date: todayISO(),
+  data: loadAll()
+};
+
+// ---------- Utilities ----------
+function todayISO() {
+  const d = new Date();
+  const tz = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+  return tz.toISOString().slice(0,10);
+}
+function weekdayKey(dateStr){
+  const d = new Date(dateStr + "T00:00:00");
+  const i = d.getDay(); // 0 Sun
+  return ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][i];
+}
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  setTimeout(() => t.style.display = "none", 1600);
+}
+function loadAll() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; } }
+function saveAll(obj) { localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); }
+function getDay(date) { return appState.data[date] || {}; }
+function setDay(date, dayData) { appState.data[date] = dayData; saveAll(appState.data); }
+function est1RM(w, r){ return Math.round(w * (1 + r/30)); }
+function formatNumber(n){ return n.toLocaleString(); }
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+
+// ---------- UI Build ----------
+const grid = document.getElementById("exerciseGrid");
+function buildExerciseCards(exList) {
+  grid.innerHTML = "";
+  exList.forEach(ex => {
+    const card = document.createElement("div");
+    card.className = "card";
+    const targetsBadge = ex.targets?.length ? `<span class="badge">Targets: ${ex.targets.join(", ")} reps</span>` : "";
+    card.innerHTML = `
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <div class="text-base font-semibold">${ex.name}</div>
+          <div class="mt-0.5 space-x-2">
+            ${targetsBadge}
+            <span class="badge">ID: ${ex.id}</span>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-ghost text-xs" data-action="copy-last" data-ex="${ex.id}">Copy last</button>
+          <button class="btn btn-ghost text-xs" data-action="add-set" data-ex="${ex.id}">+ Set</button>
+        </div>
+      </div>
+      <div class="mt-3 space-y-2" id="sets-${ex.id}"></div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function ensureRowsForTargets(ex){
+  const wrap = document.getElementById(`sets-${ex.id}`);
+  wrap.innerHTML = "";
+  const t = ex.targets?.length ? ex.targets : [0,0,0];
+  t.forEach((reps, idx) => {
+    const row = document.createElement("div");
+    row.className = "flex items-center gap-2";
+    row.innerHTML = `
+      <div class="label w-8 text-center">${idx+1}</div>
+      <input type="number" min="0" step="1" placeholder="Weight" class="input" data-field="weight">
+      <input type="number" min="0" step="1" placeholder="Reps" class="input" data-field="reps" value="${reps || ""}">
+      <div class="text-xs text-gray-500 min-w-[70px]">1RM: <span data-1rm>-</span></div>
+      <button class="btn btn-ghost text-xs" data-action="remove-set">Remove</button>
+    `;
+    wrap.appendChild(row);
+    row.addEventListener("input", () => {
+      const w = parseFloat(row.querySelector('[data-field="weight"]').value || 0);
+      const r = parseFloat(row.querySelector('[data-field="reps"]').value || 0);
+      row.querySelector("[data-1rm]").textContent = (w>0 && r>0) ? est1RM(w,r) : "-";
+      recalcSummary();
+    });
+    row.querySelector('[data-action="remove-set"]').addEventListener("click", () => {
+      row.remove();
+      recalcSummary();
+    });
+  });
+}
+
+function hydrateFromSaved(day){
+  for (const [exId, val] of Object.entries(day)) {
+    const wrap = document.getElementById(`sets-${exId}`);
+    if (!wrap) continue;
+    wrap.innerHTML = "";
+    val.sets.forEach((set, idx) => {
+      const row = document.createElement("div");
+      row.className = "flex items-center gap-2";
+      row.innerHTML = `
+        <div class="label w-8 text-center">${idx+1}</div>
+        <input type="number" min="0" step="1" placeholder="Weight" class="input" data-field="weight" value="${set.weight}">
+        <input type="number" min="0" step="1" placeholder="Reps" class="input" data-field="reps" value="${set.reps}">
+        <div class="text-xs text-gray-500 min-w-[70px]">1RM: <span data-1rm>${set.weight && set.reps ? est1RM(+set.weight, +set.reps) : "-"}</span></div>
+        <button class="btn btn-ghost text-xs" data-action="remove-set">Remove</button>
+      `;
+      wrap.appendChild(row);
+      row.querySelector('[data-action="remove-set"]').addEventListener("click", () => { row.remove(); recalcSummary(); });
+    });
+  }
+  recalcSummary();
+}
+
+// ---------- Routine helpers ----------
+function routineForDate(dateStr){
+  const wk = weekdayKey(dateStr);
+  if (wk === "monday") return "monday";
+  if (wk === "tuesday") return "tuesday";
+  if (wk === "wednesday") return "wednesday";
+  if (wk === "thursday") return "thursday";
+  if (wk === "friday") return "friday";
+  return ""; // weekend or custom
+}
+
+function loadRoutine(key){
+  const r = ROUTINES[key];
+  if (!r) { showToast("No routine for this day"); return; }
+  // Build cards
+  buildExerciseCards(r.items);
+  // Pre-create rows to match targets
+  r.items.forEach(ensureRowsForTargets);
+  // Update plan display
+  document.getElementById("planMeta").textContent = r.title;
+  const planList = document.getElementById("planList");
+  planList.innerHTML = "";
+  r.items.forEach(it => {
+    const li = document.createElement("li");
+    const t = it.targets?.length ? `${it.targets.join(", ")}` : "";
+    li.textContent = `${it.name}${t ? " — " + t + " reps" : ""}`;
+    planList.appendChild(li);
+  });
+  // Rebuild exercise picker for charts
+  buildExerciseSelect(Object.values(ROUTINES).flatMap(x => x.items));
+}
+
+// ---------- Persistence ----------
+function readFromUI() {
+  const day = {};
+  const allIds = Array.from(document.querySelectorAll("[id^='sets-']")).map(x => x.id.replace("sets-",""));
+  allIds.forEach(exId => {
+    const container = document.getElementById(`sets-${exId}`);
+    const sets = Array.from(container.children).map(row => {
+      const w = row.querySelector('[data-field="weight"]').value;
+      const r = row.querySelector('[data-field="reps"]').value;
+      return {weight: w ? +w : "", reps: r ? +r : ""};
+    }).filter(s => s.weight !== "" && s.reps !== "");
+    if (sets.length) day[exId] = { sets };
+  });
+  return day;
+}
+
+function writeToUI(day){
+  // If we already have data saved for this date, try to reconstruct a minimal list of exercises
+  let exList = [];
+  if (Object.keys(day).length) {
+    const all = Object.values(ROUTINES).flatMap(x => x.items);
+    exList = Object.keys(day).map(id => all.find(e => e.id===id) || {id, name: id, targets:[0,0,0]});
+  } else {
+    // default to routine based on weekday
+    const rk = routineForDate(appState.date);
+    if (rk) {
+      loadRoutine(rk);
+      return;
+    } else {
+      grid.innerHTML = "<div class='card'><div class='small'>No routine loaded. Choose one from the dropdown.</div></div>";
+    }
+  }
+  buildExerciseCards(exList);
+  hydrateFromSaved(day);
+  buildExerciseSelect(Object.values(ROUTINES).flatMap(x => x.items));
+}
+
+// Save
+function saveDay() {
+  const day = readFromUI();
+  setDay(appState.date, day);
+  recalcSummary(true);
+  showToast("Saved");
+  refreshCharts();
+}
+
+// Copy last for all
+function copyLastForAll(){
+  const ids = Array.from(document.querySelectorAll("[id^='sets-']")).map(x => x.id.replace("sets-",""));
+  ids.forEach(exId => copyLastForExercise(exId, false));
+  recalcSummary();
+  showToast("Copied last for all");
+}
+
+// Copy last for one exercise
+function copyLastForExercise(exId, withToast=true){
+  const dates = Object.keys(appState.data).filter(d => d < appState.date).sort();
+  for (let i = dates.length - 1; i >= 0; i--) {
+    const d = dates[i];
+    const exData = appState.data[d]?.[exId];
+    if (exData && exData.sets?.length) {
+      const wrap = document.getElementById(`sets-${exId}`);
+      if (!wrap) return;
+      wrap.innerHTML = "";
+      exData.sets.forEach((s, idx) => {
+        const row = document.createElement("div");
+        row.className = "flex items-center gap-2";
+        row.innerHTML = `
+          <div class="label w-8 text-center">${idx+1}</div>
+          <input type="number" min="0" step="1" placeholder="Weight" class="input" data-field="weight" value="${s.weight}">
+          <input type="number" min="0" step="1" placeholder="Reps" class="input" data-field="reps" value="${s.reps}">
+          <div class="text-xs text-gray-500 min-w-[70px]">1RM: <span data-1rm>${s.weight && s.reps ? est1RM(+s.weight, +s.reps) : "-"}</span></div>
+          <button class="btn btn-ghost text-xs" data-action="remove-set">Remove</button>
+        `;
+        wrap.appendChild(row);
+        row.querySelector('[data-action="remove-set"]').addEventListener("click", () => { row.remove(); recalcSummary(); });
+      });
+      if (withToast) showToast(`Copied last`);
+      return;
+    }
+  }
+  if (withToast) showToast("No previous data");
+}
+
+// Summary
+function recalcSummary(saved=false){
+  const day = readFromUI();
+  const totalSets = Object.values(day).reduce((acc, ex) => acc + ex.sets.length, 0);
+  const volume = Object.values(day).flatMap(ex => ex.sets).reduce((acc, s) => acc + (s.weight * s.reps), 0);
+  document.getElementById("sumSets").textContent = totalSets;
+  document.getElementById("sumVolume").textContent = formatNumber(volume);
+  // PRs
+  let prs = 0;
+  for (const exId of Object.keys(day)) {
+    const todays = day[exId]?.sets || [];
+    const todayBest = Math.max(0, ...todays.map(s => est1RM(+s.weight, +s.reps)));
+    if (!todayBest) continue;
+    let prevBest = 0;
+    for (const [d, ddata] of Object.entries(appState.data)) {
+      if (d >= appState.date) continue;
+      const sets = ddata[exId]?.sets || [];
+      const b = Math.max(0, ...sets.map(s => est1RM(+s.weight, +s.reps)));
+      if (b > prevBest) prevBest = b;
+    }
+    if (todayBest > prevBest) prs++;
+  }
+  document.getElementById("sumPRs").textContent = prs;
+}
+
+// ---------- Charts ----------
+let chart1rm, chartVolume;
+
+function buildExerciseSelect(exList){
+  const sel = document.getElementById("exerciseSelect");
+  const uniq = {};
+  exList.forEach(e => uniq[e.id] = e.name);
+  sel.innerHTML = Object.entries(uniq).map(([id, name]) => `<option value="${id}">${name}</option>`).join("");
+  const first = Object.keys(uniq)[0];
+  sel.value = first || "";
+  sel.onchange = refreshCharts;
+}
+
+function refreshCharts(){
+  const selId = document.getElementById("exerciseSelect").value;
+  if (!selId) return;
+  const records = Object.entries(appState.data).sort(([a],[b]) => a.localeCompare(b));
+  const labels = [], values = [];
+  records.forEach(([date, day]) => {
+    const sets = day[selId]?.sets || [];
+    if (!sets.length) return;
+    const best = Math.max(...sets.map(s => est1RM(+s.weight, +s.reps)));
+    labels.push(date); values.push(best);
+  });
+  const ctx1 = document.getElementById("chart1rm").getContext("2d");
+  if (chart1rm) chart1rm.destroy();
+  chart1rm = new Chart(ctx1, { type: "line", data: { labels, datasets: [{ label: "Est. 1RM", data: values }] },
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false } } } });
+
+  // Weekly volume
+  const byWeek = {};
+  Object.entries(appState.data).forEach(([date, day]) => {
+    const vol = Object.values(day).flatMap(ex => ex.sets).reduce((a,s)=>a + (s.weight*s.reps), 0);
+    const wk = isoWeekStart(date);
+    byWeek[wk] = (byWeek[wk] || 0) + vol;
+  });
+  const weekKeys = Object.keys(byWeek).sort().slice(-12);
+  const ctx2 = document.getElementById("chartVolume").getContext("2d");
+  if (chartVolume) chartVolume.destroy();
+  chartVolume = new Chart(ctx2, { type: "bar", data: { labels: weekKeys, datasets: [{ label: "Session Volume", data: weekKeys.map(k => byWeek[k]) }] },
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } } });
+}
+
+function isoWeekStart(dateStr){
+  const d = new Date(dateStr + "T00:00:00");
+  const day = d.getDay();
+  const diff = (day + 6) % 7;
+  const start = new Date(d);
+  start.setDate(d.getDate() - diff);
+  const tz = new Date(start.getTime() - start.getTimezoneOffset()*60000);
+  return tz.toISOString().slice(0,10);
+}
+
+// ---------- CSV/JSON ----------
+function exportCSV(){
+  let rows = [["date","exercise_id","exercise","set","weight","reps","est_1rm"]];
+  Object.entries(appState.data).forEach(([date, day]) => {
+    Object.entries(day).forEach(([exId, ex]) => {
+      ex.sets.forEach((s, idx) => {
+        rows.push([date, exId, nameForId(exId), idx+1, s.weight, s.reps, est1RM(+s.weight, +s.reps)]);
+      });
+    });
+  });
+  const csv = rows.map(r => r.join(",")).join("\n");
+  downloadBlob(new Blob([csv], {type: "text/csv"}), "workouts.csv");
+}
+function exportJSON(){ downloadBlob(new Blob([JSON.stringify(appState.data,null,2)], {type:"application/json"}), "workouts-backup.json"); }
+function importJSON(file){
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (typeof data !== "object") throw new Error("Invalid file");
+      appState.data = data;
+      saveAll(appState.data);
+      writeToUI(getDay(appState.date));
+      refreshCharts();
+      showToast("Backup restored");
+    } catch{ alert("Invalid JSON"); }
+  };
+  reader.readAsText(file);
+}
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+function nameForId(id){
+  const all = Object.values(ROUTINES).flatMap(x => x.items);
+  const ex = all.find(e => e.id===id);
+  return ex ? ex.name : id;
+}
+
+// ---------- PWA ----------
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredPrompt = e; document.getElementById("installBtn").disabled = false; });
+document.getElementById("installBtn").addEventListener("click", async () => {
+  if (!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; document.getElementById("installBtn").disabled = true;
+});
+if ("serviceWorker" in navigator) { window.addEventListener("load", () => { navigator.serviceWorker.register("service-worker.js"); }); }
+
+// ---------- Events ----------
+document.getElementById("todayBtn").addEventListener("click", () => {
+  appState.date = todayISO();
+  document.getElementById("datePicker").value = appState.date;
+  const rk = routineForDate(appState.date);
+  if (rk) {
+    document.getElementById("routineSelect").value = rk;
+    loadRoutine(rk);
+  }
+  hydrateFromSaved(getDay(appState.date));
+});
+document.getElementById("datePicker").addEventListener("change", (e) => {
+  appState.date = e.target.value;
+  const rk = routineForDate(appState.date);
+  if (rk) { document.getElementById("routineSelect").value = rk; loadRoutine(rk); }
+  writeToUI(getDay(appState.date));
+});
+document.getElementById("loadRoutineBtn").addEventListener("click", () => {
+  const key = document.getElementById("routineSelect").value;
+  if (!key) { showToast("Pick a routine"); return; }
+  loadRoutine(key);
+});
+document.getElementById("saveBtn").addEventListener("click", saveDay);
+document.getElementById("copyAllBtn").addEventListener("click", copyLastForAll);
+document.getElementById("exportCsvBtn").addEventListener("click", exportCSV);
+document.getElementById("exportJsonBtn").addEventListener("click", exportJSON);
+document.getElementById("importJsonInput").addEventListener("change", (e)=>{ if (e.target.files?.length) importJSON(e.target.files[0]); });
+document.getElementById("clearDayBtn").addEventListener("click", () => {
+  if (!confirm("Clear this day?")) return;
+  delete appState.data[appState.date]; saveAll(appState.data);
+  writeToUI(getDay(appState.date)); refreshCharts();
+});
+document.getElementById("clearAllBtn").addEventListener("click", () => {
+  if (!confirm("Clear ALL data?")) return;
+  appState.data = {}; saveAll(appState.data);
+  writeToUI({}); refreshCharts();
+});
+document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveDay(); }});
+
+// ---------- Init ----------
+(function init(){
+  document.getElementById("datePicker").value = appState.date;
+  // Auto-select routine based on today's weekday
+  const rk = routineForDate(appState.date);
+  if (rk) { document.getElementById("routineSelect").value = rk; loadRoutine(rk); }
+  writeToUI(getDay(appState.date));
+  refreshCharts();
+})();
+</script>
+</body>
+</html>
