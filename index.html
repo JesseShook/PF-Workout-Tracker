@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PF Workout Tracker</title>
+  <meta name="theme-color" content="#0ea5e9">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <!-- Tailwind (no build) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* Toast */
+    #toast { position: fixed; bottom: 16px; right: 16px; background: rgba(17,24,39,.95); color: #fff; padding: 10px 14px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,.25); display:none; z-index: 50;}
+    .card { @apply rounded-2xl border border-gray-200/70 bg-white p-4 shadow-sm; }
+    .btn { @apply inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium border; }
+    .btn-primary { @apply border-sky-600 bg-sky-600 text-white hover:bg-sky-700; }
+    .btn-ghost { @apply border-gray-200 bg-white hover:bg-gray-50; }
+    .badge { @apply inline-flex items-center rounded-full border px-2 py-0.5 text-xs text-gray-700 border-gray-200; }
+    .input { @apply w-20 rounded-lg border border-gray-200 px-2 py-1 text-sm; }
+    .label { @apply text-xs uppercase tracking-wide text-gray-500; }
+    .grid-cards { @apply grid gap-4 md:grid-cols-2 xl:grid-cols-3; }
+    .stickybar { @apply fixed bottom-0 left-0 right-0 border-t bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 z-40; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <header class="sticky top-0 z-40 border-b bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+    <div class="mx-auto max-w-6xl px-4 py-3 flex flex-wrap items-center gap-2">
+      <h1 class="text-xl font-semibold">PF Workout Tracker</h1>
+      <div class="ml-auto flex items-center gap-2">
+        <input id="datePicker" type="date" class="rounded-lg border border-gray-200 px-2 py-1 text-sm" />
+        <button id="todayBtn" class="btn btn-ghost">Today</button>
+        <button id="copyAllBtn" class="btn btn-ghost">Copy last for all</button>
+        <button id="saveBtn" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 pb-24 pt-6">
+    <section aria-label="summary" class="mb-6 grid gap-3 sm:grid-cols-3">
+      <div class="card">
+        <div class="label">Session Volume</div>
+        <div id="sumVolume" class="mt-1 text-2xl font-bold">0</div>
+      </div>
+      <div class="card">
+        <div class="label">Total Sets</div>
+        <div id="sumSets" class="mt-1 text-2xl font-bold">0</div>
+      </div>
+      <div class="card">
+        <div class="label">New PRs today</div>
+        <div id="sumPRs" class="mt-1 text-2xl font-bold">0</div>
+      </div>
+    </section>
+
+    <section aria-label="workout" class="grid-cards" id="exerciseGrid"></section>
+
+    <section aria-label="analytics" class="mt-8 grid gap-4 lg:grid-cols-2">
+      <div class="card">
+        <div class="mb-2 flex items-center justify-between">
+          <div class="font-semibold">Estimated 1RM Trend</div>
+          <div>
+            <label class="label">Exercise</label>
+            <select id="exerciseSelect" class="rounded-lg border border-gray-200 px-2 py-1 text-sm"></select>
+          </div>
+        </div>
+        <canvas id="chart1rm" height="220"></canvas>
+      </div>
+      <div class="card">
+        <div class="mb-2 flex items-center justify-between">
+          <div class="font-semibold">Weekly Volume</div>
+          <div class="label">Last 12 weeks</div>
+        </div>
+        <canvas id="chartVolume" height="220"></canvas>
+      </div>
+    </section>
+
+    <section class="mt-8 grid gap-4 md:grid-cols-2">
+      <div class="card">
+        <div class="font-semibold mb-2">Data</div>
+        <div class="flex flex-wrap gap-2">
+          <button id="exportCsvBtn" class="btn btn-ghost">Export CSV</button>
+          <button id="exportJsonBtn" class="btn btn-ghost">Backup JSON</button>
+          <label class="btn btn-ghost cursor-pointer">
+            Restore JSON
+            <input id="importJsonInput" type="file" accept="application/json" class="hidden">
+          </label>
+          <button id="clearDayBtn" class="btn btn-ghost">Clear Day</button>
+          <button id="clearAllBtn" class="btn btn-ghost">Clear All</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="font-semibold mb-2">Tips</div>
+        <ul class="list-disc pl-5 text-sm space-y-1">
+          <li>Press Ctrl or Cmd + S to save.</li>
+          <li>Use Copy last to prefill from your previous session.</li>
+          <li>Install this as an app from your browser menu.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div class="stickybar">
+    <div class="mx-auto max-w-6xl px-4 py-2 flex items-center gap-2">
+      <button id="installBtn" class="btn btn-ghost">Install</button>
+      <div class="ml-auto text-xs text-gray-500">Autosaves on Save button or Ctrl/Cmd + S</div>
+    </div>
+  </div>
+
+<script>
+// ---------- Config ----------
+const EXERCISES = [
+  { id: "squat", name: "Back Squat", goalReps: 5 },
+  { id: "bench", name: "Bench Press", goalReps: 5 },
+  { id: "deadlift", name: "Deadlift", goalReps: 5 },
+  { id: "ohp", name: "Overhead Press", goalReps: 5 },
+  { id: "row", name: "Barbell Row", goalReps: 8 },
+];
+
+const STORAGE_KEY = "pfwt_v1";
+
+// ---------- State ----------
+let appState = {
+  date: todayISO(),
+  data: loadAll()
+};
+
+// ---------- Utilities ----------
+function todayISO() {
+  const d = new Date();
+  const tz = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+  return tz.toISOString().slice(0,10);
+}
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  setTimeout(() => t.style.display = "none", 1500);
+}
+function loadAll() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveAll(obj) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+}
+function getDay(date) {
+  return appState.data[date] || {};
+}
+function setDay(date, dayData) {
+  appState.data[date] = dayData;
+  saveAll(appState.data);
+}
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+function sum(a){ return a.reduce((x,y)=>x+y,0); }
+function est1RM(weight, reps){ return Math.round(weight * (1 + reps/30)); } // Epley
+function formatNumber(n){ return n.toLocaleString(); }
+
+// ---------- UI Build ----------
+const grid = document.getElementById("exerciseGrid");
+function buildExerciseCards() {
+  grid.innerHTML = "";
+  const day = getDay(appState.date);
+  EXERCISES.forEach(ex => {
+    const exSets = (day[ex.id]?.sets) || [{weight: "", reps: ""}];
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <div class="text-base font-semibold">${ex.name}</div>
+          <div class="mt-0.5"><span class="badge">Goal: ${ex.goalReps} reps</span></div>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-ghost text-xs" data-action="copy-last" data-ex="${ex.id}">Copy last</button>
+          <button class="btn btn-ghost text-xs" data-action="add-set" data-ex="${ex.id}">+ Set</button>
+        </div>
+      </div>
+      <div class="mt-3 space-y-2" id="sets-${ex.id}"></div>
+    `;
+    grid.appendChild(card);
+
+    const setsWrap = card.querySelector(`#sets-${ex.id}`);
+    exSets.forEach((set, idx) => {
+      const row = document.createElement("div");
+      row.className = "flex items-center gap-2";
+      row.innerHTML = `
+        <div class="label w-8 text-center">${idx+1}</div>
+        <input type="number" min="0" step="1" placeholder="Weight" class="input" data-field="weight" value="${set.weight}">
+        <input type="number" min="0" step="1" placeholder="Reps" class="input" data-field="reps" value="${set.reps}">
+        <div class="text-xs text-gray-500 min-w-[70px]">1RM: <span data-1rm>${set.weight && set.reps ? est1RM(+set.weight, +set.reps) : "-"}</span></div>
+        <button class="btn btn-ghost text-xs" data-action="remove-set">Remove</button>
+      `;
+      setsWrap.appendChild(row);
+
+      row.addEventListener("input", (e) => {
+        if (e.target.matches("[data-field]")) {
+          const w = parseFloat(row.querySelector('[data-field="weight"]').value || 0);
+          const r = parseFloat(row.querySelector('[data-field="reps"]').value || 0);
+          row.querySelector("[data-1rm]").textContent = (w>0 && r>0) ? est1RM(w,r) : "-";
+          recalcSummary();
+        }
+      });
+      row.querySelector('[data-action="remove-set"]').addEventListener("click", () => {
+        row.remove();
+        recalcSummary();
+      });
+    });
+
+    card.addEventListener("click", (e) => {
+      const action = e.target.getAttribute("data-action");
+      if (!action) return;
+      if (action === "add-set") {
+        const row = document.createElement("div");
+        row.className = "flex items-center gap-2";
+        row.innerHTML = `
+          <div class="label w-8 text-center">${setsWrap.children.length+1}</div>
+          <input type="number" min="0" step="1" placeholder="Weight" class="input" data-field="weight">
+          <input type="number" min="0" step="1" placeholder="Reps" class="input" data-field="reps">
+          <div class="text-xs text-gray-500 min-w-[70px]">1RM: <span data-1rm>-</span></div>
+          <button class="btn btn-ghost text-xs" data-action="remove-set">Remove</button>
+        `;
+        setsWrap.appendChild(row);
+        row.querySelector('[data-action="remove-set"]').addEventListener("click", () => {
+          row.remove();
+          recalcSummary();
+        });
+      }
+      if (action === "copy-last") {
+        copyLastForExercise(ex.id);
+      }
+    });
+  });
+}
+
+// ---------- Persistence ----------
+function readFromUI() {
+  const day = {};
+  EXERCISES.forEach(ex => {
+    const container = document.getElementById(`sets-${ex.id}`);
+    if (!container) return;
+    const sets = Array.from(container.children).map(row => {
+      const w = row.querySelector('[data-field="weight"]').value;
+      const r = row.querySelector('[data-field="reps"]').value;
+      return {weight: w ? +w : "", reps: r ? +r : ""};
+    }).filter(s => s.weight !== "" && s.reps !== "");
+    if (sets.length) day[ex.id] = { sets };
+  });
+  return day;
+}
+
+function writeToUI(day){
+  buildExerciseCards();
+  // Fill with saved values
+  Object.entries(day).forEach(([exId, val]) => {
+    const wrap = document.getElementById(`sets-${exId}`);
+    if (!wrap) return;
+    // clear and re-add
+    wrap.innerHTML = "";
+    val.sets.forEach((set, idx) => {
+      const row = document.createElement("div");
+      row.className = "flex items-center gap-2";
+      row.innerHTML = `
+        <div class="label w-8 text-center">${idx+1}</div>
+        <input type="number" min="0" step="1" placeholder="Weight" class="input" data-field="weight" value="${set.weight}">
+        <input type="number" min="0" step="1" placeholder="Reps" class="input" data-field="reps" value="${set.reps}">
+        <div class="text-xs text-gray-500 min-w-[70px]">1RM: <span data-1rm>${est1RM(+set.weight, +set.reps)}</span></div>
+        <button class="btn btn-ghost text-xs" data-action="remove-set">Remove</button>
+      `;
+      wrap.appendChild(row);
+      row.querySelector('[data-action="remove-set"]').addEventListener("click", () => {
+        row.remove();
+        recalcSummary();
+      });
+    });
+  });
+  recalcSummary();
+}
+
+// Save
+function saveDay() {
+  const day = readFromUI();
+  setDay(appState.date, day);
+  recalcSummary(true);
+  showToast("Saved");
+  refreshCharts();
+}
+
+// Copy last for all
+function copyLastForAll(){
+  EXERCISES.forEach(ex => copyLastForExercise(ex.id, false));
+  recalcSummary();
+  showToast("Copied last for all");
+}
+// Copy last for one exercise
+function copyLastForExercise(exId, withToast=true){
+  // find the most recent previous date with that exercise
+  const dates = Object.keys(appState.data).filter(d => d < appState.date).sort();
+  for (let i = dates.length - 1; i >= 0; i--) {
+    const d = dates[i];
+    const exData = appState.data[d]?.[exId];
+    if (exData && exData.sets?.length) {
+      // write into UI
+      const wrap = document.getElementById(`sets-${exId}`);
+      if (!wrap) return;
+      wrap.innerHTML = "";
+      exData.sets.forEach((s, idx) => {
+        const row = document.createElement("div");
+        row.className = "flex items-center gap-2";
+        row.innerHTML = `
+          <div class="label w-8 text-center">${idx+1}</div>
+          <input type="number" min="0" step="1" placeholder="Weight" class="input" data-field="weight" value="${s.weight}">
+          <input type="number" min="0" step="1" placeholder="Reps" class="input" data-field="reps" value="${s.reps}">
+          <div class="text-xs text-gray-500 min-w-[70px]">1RM: <span data-1rm>${est1RM(+s.weight, +s.reps)}</span></div>
+          <button class="btn btn-ghost text-xs" data-action="remove-set">Remove</button>
+        `;
+        wrap.appendChild(row);
+        row.querySelector('[data-action="remove-set"]').addEventListener("click", () => {
+          row.remove();
+          recalcSummary();
+        });
+      });
+      if (withToast) showToast(`Copied last ${EXERCISES.find(e=>e.id===exId).name}`);
+      return;
+    }
+  }
+  if (withToast) showToast("No previous data");
+}
+
+// Summary
+function recalcSummary(saved=false){
+  const day = readFromUI();
+  const totalSets = Object.values(day).reduce((acc, ex) => acc + ex.sets.length, 0);
+  const volume = Object.values(day).flatMap(ex => ex.sets).reduce((acc, s) => acc + (s.weight * s.reps), 0);
+  document.getElementById("sumSets").textContent = totalSets;
+  document.getElementById("sumVolume").textContent = formatNumber(volume);
+  // PRs: if any set 1RM beats prior best for that exercise
+  let prs = 0;
+  for (const ex of EXERCISES) {
+    const todays = day[ex.id]?.sets || [];
+    const todayBest = Math.max(0, ...todays.map(s => est1RM(+s.weight, +s.reps)));
+    if (!todayBest) continue;
+    // find previous best
+    let prevBest = 0;
+    for (const [d, ddata] of Object.entries(appState.data)) {
+      if (d >= appState.date) continue;
+      const sets = ddata[ex.id]?.sets || [];
+      const b = Math.max(0, ...sets.map(s => est1RM(+s.weight, +s.reps)));
+      if (b > prevBest) prevBest = b;
+    }
+    if (todayBest > prevBest) prs++;
+  }
+  document.getElementById("sumPRs").textContent = prs;
+  if (saved) { /* nothing extra */ }
+}
+
+// ---------- Charts ----------
+let chart1rm, chartVolume;
+
+function buildExerciseSelect(){
+  const sel = document.getElementById("exerciseSelect");
+  sel.innerHTML = EXERCISES.map(e => `<option value="${e.id}">${e.name}</option>`).join("");
+  sel.value = EXERCISES[0].id;
+  sel.addEventListener("change", refreshCharts);
+}
+
+function refreshCharts(){
+  // 1RM per selected exercise over time
+  const selId = document.getElementById("exerciseSelect").value;
+  const records = Object.entries(appState.data).sort(([a],[b]) => a.localeCompare(b));
+  const labels = [];
+  const values = [];
+  records.forEach(([date, day]) => {
+    const sets = day[selId]?.sets || [];
+    if (!sets.length) return;
+    const best = Math.max(...sets.map(s => est1RM(+s.weight, +s.reps)));
+    labels.push(date);
+    values.push(best);
+  });
+
+  const ctx1 = document.getElementById("chart1rm").getContext("2d");
+  if (chart1rm) chart1rm.destroy();
+  chart1rm = new Chart(ctx1, {
+    type: "line",
+    data: { labels, datasets: [{ label: "Est. 1RM", data: values }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: { y: { beginAtZero: false } }
+    }
+  });
+
+  // Weekly volume for last 12 weeks
+  const byWeek = {};
+  Object.entries(appState.data).forEach(([date, day]) => {
+    const vol = Object.values(day).flatMap(ex => ex.sets).reduce((a,s)=>a + (s.weight*s.reps), 0);
+    const weekKey = isoWeekStart(date);
+    byWeek[weekKey] = (byWeek[weekKey] || 0) + vol;
+  });
+  const weekKeys = Object.keys(byWeek).sort().slice(-12);
+  const ctx2 = document.getElementById("chartVolume").getContext("2d");
+  if (chartVolume) chartVolume.destroy();
+  chartVolume = new Chart(ctx2, {
+    type: "bar",
+    data: { labels: weekKeys, datasets: [{ label: "Session Volume", data: weekKeys.map(k => byWeek[k]) }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
+function isoWeekStart(dateStr){
+  const d = new Date(dateStr + "T00:00:00");
+  const day = d.getDay(); // 0 Sun - 6 Sat
+  const diff = (day + 6) % 7; // move to Monday
+  const start = new Date(d);
+  start.setDate(d.getDate() - diff);
+  const tz = new Date(start.getTime() - start.getTimezoneOffset()*60000);
+  return tz.toISOString().slice(0,10);
+}
+
+// ---------- CSV/JSON ----------
+function exportCSV(){
+  let rows = [["date","exercise","set","weight","reps","est_1rm"]];
+  Object.entries(appState.data).forEach(([date, day]) => {
+    EXERCISES.forEach(ex => {
+      const sets = day[ex.id]?.sets || [];
+      sets.forEach((s, idx) => {
+        rows.push([date, ex.name, idx+1, s.weight, s.reps, est1RM(+s.weight, +s.reps)]);
+      });
+    });
+  });
+  const csv = rows.map(r => r.join(",")).join("\n");
+  downloadBlob(new Blob([csv], {type: "text/csv"}), "workouts.csv");
+}
+
+function exportJSON(){
+  downloadBlob(new Blob([JSON.stringify(appState.data,null,2)], {type:"application/json"}), "workouts-backup.json");
+}
+
+function importJSON(file){
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (typeof data !== "object") throw new Error("Invalid file");
+      appState.data = data;
+      saveAll(appState.data);
+      writeToUI(getDay(appState.date));
+      refreshCharts();
+      showToast("Backup restored");
+    } catch(e){
+      alert("Invalid JSON");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---------- PWA ----------
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById("installBtn").disabled = false;
+});
+document.getElementById("installBtn").addEventListener("click", async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  document.getElementById("installBtn").disabled = true;
+});
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("service-worker.js");
+  });
+}
+
+// ---------- Events ----------
+document.getElementById("todayBtn").addEventListener("click", () => {
+  appState.date = todayISO();
+  document.getElementById("datePicker").value = appState.date;
+  writeToUI(getDay(appState.date));
+});
+document.getElementById("datePicker").addEventListener("change", (e) => {
+  appState.date = e.target.value;
+  writeToUI(getDay(appState.date));
+});
+document.getElementById("saveBtn").addEventListener("click", saveDay);
+document.getElementById("copyAllBtn").addEventListener("click", copyLastForAll);
+document.getElementById("exportCsvBtn").addEventListener("click", exportCSV);
+document.getElementById("exportJsonBtn").addEventListener("click", exportJSON);
+document.getElementById("importJsonInput").addEventListener("change", (e)=>{
+  if (e.target.files?.length) importJSON(e.target.files[0]);
+});
+document.getElementById("clearDayBtn").addEventListener("click", () => {
+  if (!confirm("Clear this day?")) return;
+  delete appState.data[appState.date];
+  saveAll(appState.data);
+  writeToUI(getDay(appState.date));
+  refreshCharts();
+});
+document.getElementById("clearAllBtn").addEventListener("click", () => {
+  if (!confirm("Clear ALL data?")) return;
+  appState.data = {};
+  saveAll(appState.data);
+  writeToUI({});
+  refreshCharts();
+});
+
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    saveDay();
+  }
+});
+
+// ---------- Init ----------
+(function init(){
+  document.getElementById("datePicker").value = appState.date;
+  buildExerciseSelect();
+  buildExerciseCards();
+  writeToUI(getDay(appState.date));
+  refreshCharts();
+})();
+</script>
+</body>
+</html>
